@@ -1,9 +1,18 @@
 FROM ubuntu:22.04
 
+ARG WARP_VERSION
 ARG GOST_VERSION
+ARG COMMIT_SHA
 ARG TARGETPLATFORM
 
+LABEL org.opencontainers.image.authors="cmj2002"
+LABEL org.opencontainers.image.url="https://github.com/cmj2002/warp-docker"
+LABEL WARP_VERSION=${WARP_VERSION}
+LABEL GOST_VERSION=${GOST_VERSION}
+LABEL COMMIT_SHA=${COMMIT_SHA}
+
 COPY entrypoint.sh /entrypoint.sh
+COPY ./healthcheck /healthcheck
 
 # install dependencies
 RUN case ${TARGETPLATFORM} in \
@@ -14,7 +23,7 @@ RUN case ${TARGETPLATFORM} in \
     echo "Building for ${ARCH} with GOST ${GOST_VERSION}" &&\
     apt-get update && \
     apt-get upgrade -y && \
-    apt-get install -y curl gnupg lsb-release sudo && \
+    apt-get install -y curl gnupg lsb-release sudo jq ipcalc && \
     curl https://pkg.cloudflareclient.com/pubkey.gpg | gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg && \
     echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflare-client.list && \
     apt-get update && \
@@ -26,6 +35,7 @@ RUN case ${TARGETPLATFORM} in \
     mv gost-linux-${ARCH}-${GOST_VERSION} /usr/bin/gost && \
     chmod +x /usr/bin/gost && \
     chmod +x /entrypoint.sh && \
+    chmod +x /healthcheck/index.sh && \
     useradd -m -s /bin/bash warp && \
     echo "warp ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/warp
 
@@ -37,8 +47,9 @@ RUN mkdir -p /home/warp/.local/share/warp && \
 
 ENV GOST_ARGS="-L :1080"
 ENV WARP_SLEEP=2
+ENV REGISTER_WHEN_MDM_EXISTS=
 
-HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
-  CMD curl -fsS "https://cloudflare.com/cdn-cgi/trace" | grep -qE "warp=(plus|on)" || exit 1
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+  CMD /healthcheck/index.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
